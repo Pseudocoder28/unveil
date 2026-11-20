@@ -77,20 +77,34 @@ def _hex(rgb: np.ndarray) -> str:
     return "#" + "".join(f"{int(v):02X}" for v in rgb)
 
 
-def _visibility(img: np.ndarray, rect: pymupdf.Rect, text_rgb: np.ndarray):
+def to_gray(img: np.ndarray) -> np.ndarray:
+    """Fast integer luma (BT.601) of an RGB uint8 image."""
+    return ((img[..., 0].astype(np.uint16) * 77 + img[..., 1].astype(np.uint16) * 150
+             + img[..., 2].astype(np.uint16) * 29) >> 8).astype(np.uint8)
+
+
+def _visibility(img: np.ndarray, gray: np.ndarray, rect: pymupdf.Rect, text_rgb: np.ndarray):
     """Return (status, background_rgb). status is 'ok', 'low-contrast' or 'covered'."""
     h, w, _ = img.shape
     x0, y0 = max(0, int(rect.x0)), max(0, int(rect.y0))
     x1, y1 = min(w, int(np.ceil(rect.x1))), min(h, int(np.ceil(rect.y1)))
     if x1 - x0 < 1 or y1 - y0 < 1:
         return "ok", None
+    # Fast path (most text on most pages): the box contains strong light/dark contrast and
+    # the text's own brightness sits at one end of it, so the glyphs are visibly drawn.
+    g_in = gray[y0:y1, x0:x1]
+    lo, hi = int(g_in.min()), int(g_in.max())
+    if hi - lo > 60:
+        t = (int(text_rgb[0]) * 77 + int(text_rgb[1]) * 150 + int(text_rgb[2]) * 29) >> 8
+        if abs(t - lo) < 45 or abs(t - hi) < 45:
+            return "ok", None
     pad = max(2, int(0.35 * (y1 - y0)))
     X0, Y0, X1, Y1 = max(0, x0 - pad), max(0, y0 - pad), min(w, x1 + pad), min(h, y1 + pad)
     outer = img[Y0:Y1, X0:X1]
     mask = np.ones(outer.shape[:2], dtype=bool)
     mask[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0] = False
-    ring = outer[mask].astype(float)
-    inner = img[y0:y1, x0:x1].reshape(-1, 3).astype(float)
+    ring = outer[mask].astype(np.float32)
+    inner = img[y0:y1, x0:x1].reshape(-1, 3).astype(np.float32)
     if inner.size == 0:
         return "ok", None
     bg = np.median(ring if len(ring) else inner, axis=0)
@@ -146,12 +160,34 @@ def scan_pdf(path: str) -> ScanResult:
     res.pages = doc.page_count
 
     _scan_document_level(doc, res)
-    off_layers = _off_layers(doc)
 
-    for pno, page in enumerate(doc):
-        _scan_page(page, pno, off_layers, res)
+    n = doc.page_count
     doc.close()
+    from ..parallel import page_chunks, run_chunks
+    for findings, boxes in run_chunks(_scan_chunk, str(path), page_chunks(n)):
+        res.findings.extend(findings)
+        for pno, b in boxes.items():
+            res.redact_boxes.setdefault(pno, []).extend(b)
+    res.findings.sort(key=lambda f: (f.page or 0))
     return res
+
+
+def _scan_chunk(path: str, pnos: list[int]):
+    """Worker: scan a range of pages. Top-level so it can run in another process."""
+    doc = pymupdf.open(path)
+    if doc.needs_pass:
+        doc.authenticate("")
+    off_layers = _off_layers(doc)
+    part = ScanResult(path=path, file_type="pdf", sha256="")
+    for pno in pnos:
+        _scan_page(doc[pno], pno, off_layers, part)
+    doc.close()
+    return part.findings, part.redact_boxes
+
+
+def page_redact_boxes(page: pymupdf.Page, img: np.ndarray, zoom: float) -> list[tuple]:
+    """Boxes of near-invisible text on an already-rendered page (used by the sanitizer)."""
+    return [tuple(sp["bbox"]) for sp in classify_spans(page, img, to_gray(img), zoom) if sp["redact"]]
 
 
 def _scan_document_level(doc: pymupdf.Document, res: ScanResult) -> None:
@@ -213,27 +249,29 @@ def _span_text(trace: dict) -> str:
     return "".join(chr(c[0]) for c in trace.get("chars", ()) if c[0] >= 0)
 
 
-def _scan_page(page: pymupdf.Page, pno: int, off_layers: set[str], res: ScanResult) -> None:
-    loc = f"page {pno + 1}"
-    pix = page.get_pixmap(matrix=pymupdf.Matrix(ZOOM, ZOOM), alpha=False, colorspace=pymupdf.csRGB)
+def render_for_analysis(page: pymupdf.Page, zoom: float = ZOOM):
+    pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False, colorspace=pymupdf.csRGB)
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3]
-    page_rect = page.rect
-    scanned = _image_coverage(page) > 0.6
+    return img, to_gray(img)
 
+
+def classify_spans(page: pymupdf.Page, img: np.ndarray, gray: np.ndarray, zoom: float,
+                   off_layers: set[str] = frozenset()) -> list[dict]:
+    """Every non-blank text span on the page with the reasons (if any) a reader can't see it.
+
+    `img`/`gray` are the page rendered at `zoom`. Each item: seqno, text, bbox, reasons
+    [(technique, detail)], redact (True if it must be painted out before rasterizing).
+    """
     try:
         traces = page.get_texttrace()
     except Exception:
-        traces = []
-
-    hidden: list[tuple[int, str, str, pymupdf.Rect, str]] = []  # seqno, technique, text, bbox, detail
-    visible_parts: list[str] = []
-    all_parts: list[str] = []
-
+        return []
+    page_rect = page.rect
+    out = []
     for t in traces:
         text = _span_text(t)
         if not text.strip():
             continue
-        all_parts.append(text)
         bbox = pymupdf.Rect(t["bbox"])
         reasons: list[tuple[str, str]] = []
         redact = False
@@ -259,20 +297,34 @@ def _scan_page(page: pymupdf.Page, pno: int, off_layers: set[str], res: ScanResu
             reasons.append(("off-page-text", f"positioned at {tuple(round(v) for v in bbox)} outside page {tuple(round(v) for v in page_rect)}"))
         elif t.get("type") != 3 and eff >= TINY_PT:
             text_rgb = _rgb255(t.get("color"), t.get("colorspace", 3))
-            status, bg = _visibility(img, bbox * ZOOM, text_rgb)
+            status, bg = _visibility(img, gray, bbox * zoom, text_rgb)
             if status == "low-contrast":
                 reasons.append(("low-contrast-text", f"text colour {_hex(text_rgb)} on background {_hex(bg)}"))
                 redact = True
             elif status == "covered":
                 reasons.append(("covered-text", f"text colour {_hex(text_rgb)} not visible inside its box"))
                 redact = True
+        out.append({"seqno": t.get("seqno", 0), "text": text, "bbox": bbox, "reasons": reasons, "redact": redact})
+    return out
 
-        if reasons:
-            hidden.append((t.get("seqno", 0), reasons[0][0], text, bbox, "; ".join(r for _, r in reasons)))
-            if redact:
-                res.redact_boxes.setdefault(pno, []).append(tuple(bbox))
+
+def _scan_page(page: pymupdf.Page, pno: int, off_layers: set[str], res: ScanResult) -> None:
+    loc = f"page {pno + 1}"
+    img, gray = render_for_analysis(page)
+    scanned = _image_coverage(page) > 0.6
+
+    hidden: list[tuple[int, str, str, pymupdf.Rect, str]] = []  # seqno, technique, text, bbox, detail
+    visible_parts: list[str] = []
+    all_parts: list[str] = []
+    for sp in classify_spans(page, img, gray, ZOOM, off_layers):
+        all_parts.append(sp["text"])
+        if sp["reasons"]:
+            hidden.append((sp["seqno"], sp["reasons"][0][0], sp["text"], sp["bbox"],
+                           "; ".join(r for _, r in sp["reasons"])))
+            if sp["redact"]:
+                res.redact_boxes.setdefault(pno, []).append(tuple(sp["bbox"]))
         else:
-            visible_parts.append(text)
+            visible_parts.append(sp["text"])
 
     # A scanned page with an invisible OCR layer on top is normal. Report it once, quietly,
     # unless the OCR layer contains something that looks like an instruction.
