@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% block body %}
+<h1 style="font-size:26px;letter-spacing:-0.02em;margin:0 0 8px">Check a file before an AI reads it</h1>
+<p class="lede">Unveil looks for instructions hidden in a file (white text, microscopic text, hidden
+comments, metadata, invisible characters) and then rebuilds the file from screenshots, so only what
+a person can see gets passed on.</p>
+
+<form class="card" method="post" action="{{ url_for('scan') }}" enctype="multipart/form-data" id="f">
+  <label class="drop" id="drop">
+    <input type="file" name="files" multiple accept="{{ accept }}" id="file">
+    <strong>Drop files here or click to choose</strong>
+    <p class="why">PDF, Word, PowerPoint, Excel, images, HTML, Markdown, text</p>
+    <div id="picked"></div>
+  </label>
+  <div class="row">
+    <label for="sender">Sent by</label>
+    <input type="text" id="sender" name="sender" placeholder="email or name (optional, for your watch list)" list="known">
+    <datalist id="known">{% for s in senders %}<option value="{{ s }}">{% endfor %}</datalist>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" name="flatten" checked> Make a safe flattened copy</label>
+    <input type="hidden" name="flatten" value="off" disabled id="flatten-off">
+    <button class="btn" style="margin-left:auto">Scan</button>
+  </div>
+</form>
+
+{% if recent %}
+<section class="card">
+  <h2>Recent scans</h2>
+  <div class="scroll"><table class="list">
+    <tr><th>File</th><th>Sender</th><th>Result</th><th>Risk</th></tr>
+    {% for h in recent %}
+    <tr><td>{{ h.filename }}</td><td>{{ h.sender or '–' }}</td><td><span class="v {{ h.verdict }}">{{ h.verdict }}</span></td><td>{{ h.score }}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+
+<script>
+const drop = document.getElementById('drop'), input = document.getElementById('file'), picked = document.getElementById('picked');
+const show = () => picked.textContent = [...input.files].map(f => f.name).join(', ');
+input.addEventListener('change', show);
+['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+const cb = document.querySelector('input[name=flatten][type=checkbox]'), off = document.getElementById('flatten-off');
+document.getElementById('f').addEventListener('submit', () => { off.disabled = cb.checked; });
+</script>
+{% endblock %}

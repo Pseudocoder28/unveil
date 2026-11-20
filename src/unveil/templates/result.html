@@ -1,0 +1,7 @@
+{% extends "layout.html" %}
+{% block title %}{{ name }} · Unveil{% endblock %}
+{% block body %}
+{% include "_report_body.html" %}
+<p><a class="btn secondary" href="{{ url_for('report_download', jid=job.id) }}">Download report (HTML)</a>
+   <a class="btn secondary" href="{{ url_for('index') }}">Scan another file</a></p>
+{% endblock %}

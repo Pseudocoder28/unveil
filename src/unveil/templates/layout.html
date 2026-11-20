@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Unveil{% endblock %}</title>
+{% include "_styles.html" %}
+<style>
+.drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center; cursor: pointer;
+  transition: border-color .15s, background .15s; }
+.drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.drop strong { display: block; font-size: 17px; margin-bottom: 4px; }
+.drop .why { margin: 0; }
+.drop input { display: none; }
+#picked { margin-top: 10px; font-size: 13px; color: var(--ink); font-family: var(--mono); word-break: break-all; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+.row label { font-size: 14px; color: var(--muted); }
+input[type=text] { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); min-width: 0; flex: 1 1 240px; }
+.lede { color: var(--muted); margin: -4px 0 18px; max-width: 64ch; }
+.v { font-weight: 600; font-size: 12px; text-transform: uppercase; }
+.v.malicious { color: var(--crit); } .v.suspicious { color: var(--med); } .v.clean { color: var(--ok); }
+.st { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.st.blocked { background: var(--crit-bg); color: var(--crit); } .st.watch { background: var(--med-bg); color: var(--med); }
+.st.trusted { background: var(--ok-bg); color: var(--ok); } .st.unknown { background: var(--info-bg); color: var(--info); }
+.actions form { display: inline; } .actions button { font-size: 12px; padding: 4px 8px; margin: 2px 4px 2px 0; }
+.scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="{{ url_for('index') }}">unveil</a>
+    <nav><a href="{{ url_for('index') }}">Scan</a><a href="{{ url_for('senders') }}">Senders</a></nav>
+  </header>
+  {% block body %}{% endblock %}
+  <p class="footer">Runs entirely on this computer. Files are never uploaded anywhere.</p>
+</div>
+</body>
+</html>

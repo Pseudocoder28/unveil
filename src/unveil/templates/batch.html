@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block title %}Batch results · Unveil{% endblock %}
+{% block body %}
+<section class="card">
+  <h2>{{ jobs|length }} files scanned</h2>
+  <div class="scroll"><table class="list">
+    <tr><th>File</th><th>Result</th><th>Risk</th><th>Findings</th><th></th></tr>
+    {% for j in jobs %}
+    {% set c = j.result.counts() %}
+    <tr>
+      <td><a href="{{ url_for('result', jid=j.id) }}">{{ j.original.name }}</a></td>
+      <td><span class="v {{ j.result.verdict }}">{{ j.result.verdict }}</span></td>
+      <td>{{ j.result.score }}</td>
+      <td>{% for sev in ['critical','high','medium','low'] %}{% if c[sev] %}<span class="pill s-{{ sev }}">{{ c[sev] }} {{ sev }}</span> {% endif %}{% endfor %}</td>
+      <td>{% if j.sanitized %}<a href="{{ url_for('download', jid=j.id) }}">safe copy</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

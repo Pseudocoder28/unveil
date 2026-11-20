@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}Senders · Unveil{% endblock %}
+{% block body %}
+<h1 style="font-size:24px;margin:0 0 8px">Senders</h1>
+<p class="lede">Anyone who sends a file with hidden AI instructions is put on the watch list automatically.
+Blocking is your call: files from blocked senders are still scanned, but no safe copy is made.</p>
+
+<section class="card">
+  {% if not senders %}
+  <p class="why">No senders yet. Fill in “Sent by” when you scan a file to start tracking.</p>
+  {% else %}
+  <div class="scroll"><table class="list">
+    <tr><th>Sender</th><th>Status</th><th>Files</th><th>Hidden instr.</th><th>Note</th><th></th></tr>
+    {% for s in senders %}
+    <tr>
+      <td>{{ s.sender }}</td>
+      <td><span class="st {{ s.status }}">{{ s.status }}</span></td>
+      <td>{{ s.scans }}</td>
+      <td>{{ s.malicious }}</td>
+      <td class="why">{{ s.note }}</td>
+      <td class="actions">
+        {% for st, label, cls in [('blocked','Block','danger'),('watch','Watch','secondary'),('trusted','Trust','secondary'),('unknown','Clear','secondary')] %}
+          {% if s.status != st %}
+          <form method="post" action="{{ url_for('sender_status') }}">
+            <input type="hidden" name="sender" value="{{ s.sender }}"><input type="hidden" name="status" value="{{ st }}">
+            <button class="btn {{ cls }}">{{ label }}</button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Add someone to the blocklist</h2>
+  <form method="post" action="{{ url_for('sender_status') }}" class="row" style="margin-top:0">
+    <input type="hidden" name="status" value="blocked">
+    <input type="text" name="sender" placeholder="email or name" required>
+    <input type="text" name="note" placeholder="reason (optional)">
+    <button class="btn danger">Block</button>
+  </form>
+</section>
+
+{% if history %}
+<section class="card">
+  <h2>Scan history</h2>
+  <div class="scroll"><table class="list">
+    <tr><th>When (UTC)</th><th>File</th><th>Sender</th><th>Result</th><th>Techniques</th></tr>
+    {% for h in history %}
+    <tr><td class="why">{{ h.scanned_at[:16]|replace('T',' ') }}</td><td>{{ h.filename }}</td><td>{{ h.sender or '–' }}</td>
+      <td><span class="v {{ h.verdict }}">{{ h.verdict }}</span></td>
+      <td class="why">{{ h.techniques|join(', ') }}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

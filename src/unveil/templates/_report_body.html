@@ -1,0 +1,76 @@
+<section class="card verdict v-{{ r.verdict }}">
+  <span class="badge">{{ r.verdict }}</span>
+  <div style="flex:1;min-width:0">
+    <h1>{{ verdict_text }}</h1>
+    <div class="meta">{{ name }} · {{ r.file_type|upper }}{% if r.pages %} · {{ r.pages }} page{{ 's' if r.pages != 1 }}{% endif %} · SHA-256 {{ r.sha256[:16] }}…</div>
+    <div class="counts">
+      {% for sev in ['critical','high','medium','low','info'] %}{% if counts[sev] %}
+      <span class="pill s-{{ sev }}">{{ counts[sev] }} {{ sev }}</span>
+      {% endif %}{% endfor %}
+    </div>
+    {% if sender %}
+      {% if sender.status == 'blocked' %}
+      <div class="banner blocked">⚠ {{ sender.sender }} is on your blocklist. {{ sender.malicious }} of {{ sender.scans }} file(s) they sent contained hidden AI instructions.</div>
+      {% elif sender.status == 'watch' %}
+      <div class="banner watch">{{ sender.sender }} is on your watch list ({{ sender.malicious }} of {{ sender.scans }} file(s) contained hidden instructions).
+        {% if allow_actions %}<form method="post" action="{{ url_for('sender_status') }}"><input type="hidden" name="sender" value="{{ sender.sender }}"><input type="hidden" name="status" value="blocked"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn danger" style="margin-left:8px;padding:5px 10px">Block sender</button></form>{% else %}Block with <code>unveil senders block "{{ sender.sender }}"</code>.{% endif %}
+      </div>
+      {% else %}
+      <div class="banner ok">{{ sender.sender }}: {{ sender.status }} · {{ sender.scans }} file(s) scanned, {{ sender.malicious }} with hidden instructions.</div>
+      {% endif %}
+    {% endif %}
+  </div>
+  <div class="score"><b>{{ r.score }}</b><span>risk / 100</span></div>
+</section>
+
+{% if sanitized %}
+<section class="card">
+  <h2>Safe copy</h2>
+  <div class="safe">
+    {% if download_url %}<a class="btn" href="{{ download_url }}">Download safe copy</a>{% endif %}
+    <span class="meta">{{ sanitized.output.split('/')[-1] }}</span>
+  </div>
+  <ul class="notes">{% for n in sanitized.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+</section>
+{% elif sanitize_error %}
+<section class="card"><h2>Safe copy</h2><p class="why">{{ sanitize_error }}</p></section>
+{% endif %}
+
+{% set serious = findings|rejectattr('severity', 'equalto', 'info')|list %}
+{% set infos = findings|selectattr('severity', 'equalto', 'info')|list %}
+<section class="card">
+  <h2>What we found</h2>
+  {% if not serious %}<p class="why">Nothing hidden was detected. Flattening the file is still the safest way to hand it to an AI.</p>{% endif %}
+  {% for f in serious %}
+  <div class="finding sev-{{ f.severity }}">
+    <div class="head">
+      <span class="pill s-{{ f.severity }}">{{ f.severity }}</span>
+      <span class="title">{{ f.title }}</span>
+      <span class="loc">{{ f.location }}</span>
+    </div>
+    {% if f.text %}<pre>{{ f.text }}</pre>{% endif %}
+    {% if f.patterns %}<div class="tags">{% for p in f.patterns %}<span class="tag">{{ p|replace('-', ' ') }}</span>{% endfor %}</div>{% endif %}
+    {% if f.detail %}<div class="why">{{ f.detail }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% if infos %}
+  <details class="info" style="margin-top:12px"><summary>{{ infos|length }} informational item{{ 's' if infos|length != 1 }} (metadata etc.)</summary>
+    {% for f in infos %}
+    <div class="finding sev-info"><div class="head"><span class="title">{{ f.title }}</span><span class="loc">{{ f.location }}</span></div>
+      {% if f.text %}<pre>{{ f.text }}</pre>{% endif %}{% if f.detail %}<div class="why">{{ f.detail }}</div>{% endif %}</div>
+    {% endfor %}
+  </details>
+  {% endif %}
+</section>
+
+{% if evidence %}
+<section class="card">
+  <h2>Where it was hidden</h2>
+  <p class="why" style="margin-top:-6px">Red boxes mark text a reader cannot see but an AI would read.</p>
+  <div class="evidence">
+    {% for page, uri in evidence.items() %}
+    <figure><img src="{{ uri }}" alt="Page {{ page }} with hidden text locations marked"><figcaption>Page {{ page }}</figcaption></figure>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

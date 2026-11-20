@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unveil"
+version = "0.1.0"
+description = "Find hidden AI prompt injections in PDFs, Word files and more, then rebuild the file from screenshots so only what a human can see survives."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pymupdf>=1.24",
+    "lxml>=5.0",
+    "pillow>=10.0",
+    "flask>=3.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "python-docx>=1.1", "reportlab>=4.0"]
+
+[project.scripts]
+unveil = "unveil.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+unveil = ["web/templates/*.html", "templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
