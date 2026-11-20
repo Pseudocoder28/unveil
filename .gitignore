@@ -4,3 +4,4 @@ __pycache__/
 *.unveiled.*
 *.unveil-report.html
 .pytest_cache/
+bench/data/

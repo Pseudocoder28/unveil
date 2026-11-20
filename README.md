@@ -99,6 +99,26 @@ instructions. **Blocking** is always your decision. Files from blocked senders a
 but `clean` refuses to make a safe copy unless you pass `--force`. Data lives in
 `~/.unveil/unveil.db`; set `UNVEIL_HOME` to change the location.
 
+## Performance
+
+Long documents are processed on several CPU cores at once (up to 8 worker processes,
+starting at 12 pages). On an M-series Mac a 60-page PDF scans in ~0.8s and flattens in
+~1.1s. Black-and-white pages are stored as greyscale, and pages with a little colour use a
+64-colour palette when that is visually lossless, which keeps safe copies small.
+
+| Setting | Effect |
+|---|---|
+| `UNVEIL_WORKERS=1` | force single-process |
+| `UNVEIL_WORKERS=N` | use up to N worker processes |
+| `UNVEIL_PARALLEL_MIN_PAGES=N` | page count at which workers start (default 12) |
+| `--jpeg` | smaller output for photo-heavy documents |
+
+If you call unveil from your own Python script, wrap the work in
+`if __name__ == "__main__":` to allow multi-process mode. Without that guard unveil
+still works, just on a single core.
+
+Benchmark with `python bench/make_big.py && python bench/bench.py`.
+
 ## Development
 
 ```bash

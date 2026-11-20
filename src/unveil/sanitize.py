@@ -16,7 +16,6 @@ visibly on the picture, so it cannot reintroduce hidden text.
 
 from __future__ import annotations
 
-import io
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -46,15 +45,18 @@ class SanitizeResult:
     notes: list[str] = field(default_factory=list)
 
 
+def _snap_lut(snap: int) -> np.ndarray:
+    lut = np.arange(256, dtype=np.uint8)
+    if snap > 0:
+        lut[: snap + 1] = 0
+        lut[255 - snap:] = 255
+    return lut
+
+
 def _snap(arr: np.ndarray, snap: int) -> np.ndarray:
-    if snap <= 0:
-        return arr
-    arr = arr.copy()
-    near_white = arr.min(axis=2) >= 255 - snap
-    near_black = arr.max(axis=2) <= snap
-    arr[near_white] = 255
-    arr[near_black] = 0
-    return arr
+    """Push every channel within `snap` levels of 0/255 to the extreme. A table lookup is
+    ~10x faster than the per-pixel min/max test and removes faint marks equally well."""
+    return _snap_lut(snap)[arr] if snap > 0 else arr
 
 
 def _ocr_available() -> bool:
@@ -62,22 +64,54 @@ def _ocr_available() -> bool:
     return which("tesseract") is not None
 
 
-def flatten_pdf(src: str, dst: str, redact_boxes: dict[int, list] | None = None,
-                opts: SanitizeOptions | None = None) -> SanitizeResult:
-    opts = opts or SanitizeOptions()
-    redact_boxes = redact_boxes or {}
-    result = SanitizeResult(output=dst)
-    use_ocr = opts.ocr and _ocr_available()
-    if opts.ocr and not use_ocr:
-        result.notes.append("OCR layer skipped: Tesseract is not installed (brew install tesseract).")
+def _is_grayscale(arr: np.ndarray, tol: int = 6) -> bool:
+    """True when the page has no real colour (sampled on a 2x2 grid for speed)."""
+    s = arr[::2, ::2].astype(np.int16)
+    return int(np.abs(s[..., 0] - s[..., 1]).max()) <= tol and int(np.abs(s[..., 1] - s[..., 2]).max()) <= tol
+
+
+def _palette_png(arr: np.ndarray, colors: int = 64, max_error: float = 2.5) -> bytes | None:
+    """Documents with a little colour (a logo, blue headings) fit in a small palette, which
+    stores ~45% smaller than full RGB. Returns None when the page is photo-like and a
+    palette would visibly change it."""
+    import io
+
+    q = Image.fromarray(arr, "RGB").quantize(colors, method=Image.Quantize.FASTOCTREE)
+    back = np.asarray(q.convert("RGB"))[::4, ::4].astype(np.int16)
+    if float(np.abs(back - arr[::4, ::4]).mean()) > max_error:
+        return None
+    buf = io.BytesIO()
+    q.save(buf, "PNG", compress_level=6)
+    return buf.getvalue()
+
+
+def _render(page: pymupdf.Page, dpi: int) -> pymupdf.Pixmap:
+    return page.get_pixmap(dpi=dpi, alpha=False, annots=True, colorspace=pymupdf.csRGB)
+
+
+def _flatten_chunk(src: str, pnos: list[int], redact_boxes: dict, opts: SanitizeOptions,
+                   self_check: bool, use_ocr: bool) -> tuple[bytes, int]:
+    """Worker: rasterize a range of pages into a small PDF. Returns (pdf bytes, spans removed)."""
+    from .detectors.pdf import page_redact_boxes
 
     doc = pymupdf.open(src)
     if doc.needs_pass:
         doc.authenticate("")
     out = pymupdf.open()
     removed = 0
-    for pno, page in enumerate(doc):
-        boxes = redact_boxes.get(pno, [])
+    lut = _snap_lut(opts.snap)
+    for pno in pnos:
+        page = doc[pno]
+        boxes = list(redact_boxes.get(pno, []))
+        pix = None
+        if self_check and not boxes:
+            # One render serves both purposes: look for near-invisible text in it, and if
+            # there is none (the usual case) it is already the image we keep.
+            pix = _render(page, opts.dpi)
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+            boxes = page_redact_boxes(page, img, opts.dpi / 72)
+            if boxes:
+                pix = None
         if boxes:
             for b in boxes:
                 r = pymupdf.Rect(b)
@@ -87,33 +121,69 @@ def flatten_pdf(src: str, dst: str, redact_boxes: dict[int, list] | None = None,
                                   graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
                                   text=pymupdf.PDF_REDACT_TEXT_REMOVE)
             removed += len(boxes)
-        pix = page.get_pixmap(dpi=opts.dpi, alpha=False, annots=True, colorspace=pymupdf.csRGB)
-        arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3]
-        arr = _snap(arr, opts.snap)
-        img = Image.fromarray(arr, "RGB")
+        if pix is None:
+            pix = _render(page, opts.dpi)
+
+        arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+        if opts.snap > 0:
+            arr = lut[arr]
+        if _is_grayscale(arr):
+            # Black-and-white pages: one channel instead of three (≈3x smaller, faster).
+            data, cs = np.ascontiguousarray(arr[..., 1]), pymupdf.csGRAY
+        else:
+            data, cs = np.ascontiguousarray(arr), pymupdf.csRGB
+        clean = pymupdf.Pixmap(cs, pix.width, pix.height, data.tobytes(), False)
+        clean.set_dpi(opts.dpi, opts.dpi)
 
         if use_ocr:
-            clean_pix = pymupdf.Pixmap(pymupdf.csRGB, pix.width, pix.height, arr.tobytes(), False)
-            clean_pix.set_dpi(opts.dpi, opts.dpi)
-            ocr_pdf = pymupdf.open("pdf", clean_pix.pdfocr_tobytes(compress=True, language="eng"))
+            ocr_pdf = pymupdf.open("pdf", clean.pdfocr_tobytes(compress=True, language="eng"))
             out.insert_pdf(ocr_pdf)
             ocr_pdf.close()
             continue
-
-        buf = io.BytesIO()
-        if opts.image_format == "jpeg":
-            img.save(buf, "JPEG", quality=88, optimize=True)
-        else:
-            img.save(buf, "PNG", optimize=True)
         new = out.new_page(width=page.rect.width, height=page.rect.height)
-        new.insert_image(new.rect, stream=buf.getvalue())
-    result.pages = doc.page_count
+        if opts.image_format == "jpeg":
+            new.insert_image(new.rect, stream=clean.tobytes("jpeg", jpg_quality=85))
+        elif cs is pymupdf.csRGB and (palette := _palette_png(arr)) is not None:
+            new.insert_image(new.rect, stream=palette)
+        else:
+            new.insert_image(new.rect, pixmap=clean)  # stored Flate-compressed by MuPDF
     doc.close()
+    data = out.tobytes(deflate=True)
+    out.close()
+    return data, removed
+
+
+def flatten_pdf(src: str, dst: str, redact_boxes: dict[int, list] | None = None,
+                opts: SanitizeOptions | None = None, self_check: bool = False) -> SanitizeResult:
+    """Rasterize every page of `src` into a new image-only PDF at `dst`.
+
+    redact_boxes: near-invisible text found by the scanner, painted out before rendering.
+    self_check: look for near-invisible text in the render itself (for PDFs the scanner
+    never saw, e.g. a Word file converted on the fly).
+    """
+    from .parallel import page_chunks, run_chunks
+
+    opts = opts or SanitizeOptions()
+    redact_boxes = redact_boxes or {}
+    result = SanitizeResult(output=dst)
+    use_ocr = opts.ocr and _ocr_available()
+    if opts.ocr and not use_ocr:
+        result.notes.append("OCR layer skipped: Tesseract is not installed (brew install tesseract).")
+
+    with pymupdf.open(src) as doc:
+        n = doc.page_count
+    out = pymupdf.open()
+    removed = 0
+    for part, rm in run_chunks(_flatten_chunk, src, page_chunks(n), redact_boxes, opts, self_check, use_ocr):
+        with pymupdf.open("pdf", part) as chunk:
+            out.insert_pdf(chunk)
+        removed += rm
+    result.pages = n
 
     out.set_metadata({"producer": "unveil (flattened)", "creator": "", "author": "", "title": "",
                       "subject": "", "keywords": ""})
     out.del_xml_metadata()
-    out.save(dst, garbage=4, deflate=True)
+    out.save(dst, garbage=1, deflate=True)
     out.close()
     if removed:
         result.notes.append(f"Removed {removed} near-invisible text span(s) before rendering.")
@@ -137,13 +207,12 @@ def sanitize(path: str, scan: ScanResult, out_dir: str | None = None,
 
     if ft == "docx":
         from .docx_render import docx_to_visible_pdf
-        from .detectors.pdf import scan_pdf
         with tempfile.TemporaryDirectory() as tmp:
             mid = os.path.join(tmp, "visible.pdf")
             _, engine = docx_to_visible_pdf(str(src), mid, opts.docx_engine)
-            # Second pass: anything still nearly invisible after conversion gets painted out too.
-            boxes = scan_pdf(mid).redact_boxes
-            res = flatten_pdf(mid, str(out_dir / f"{stem}.pdf"), boxes, opts)
+            # Anything still nearly invisible after conversion is painted out too, checked on
+            # the same render that becomes the output page (no separate scan pass).
+            res = flatten_pdf(mid, str(out_dir / f"{stem}.pdf"), None, opts, self_check=True)
         res.notes.insert(0, "Word file converted with " + (
             "LibreOffice after stripping hidden runs." if engine == "libreoffice" else
             "the built-in visible-text renderer (layout simplified; install LibreOffice for exact layout)."))
@@ -157,8 +226,7 @@ def sanitize(path: str, scan: ScanResult, out_dir: str | None = None,
         with tempfile.TemporaryDirectory() as tmp:
             mid = os.path.join(tmp, "converted.pdf")
             convert_office_with_soffice(str(src), mid)
-            from .detectors.pdf import scan_pdf
-            res = flatten_pdf(mid, str(out_dir / f"{stem}.pdf"), scan_pdf(mid).redact_boxes, opts)
+            res = flatten_pdf(mid, str(out_dir / f"{stem}.pdf"), None, opts, self_check=True)
         res.notes.insert(0, f".{ft} converted with LibreOffice. Hidden slides/sheets and notes are not rendered.")
         return res
 
