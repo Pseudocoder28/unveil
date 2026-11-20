@@ -5,3 +5,4 @@ __pycache__/
 *.unveil-report.html
 .pytest_cache/
 bench/data/
+.DS_Store
