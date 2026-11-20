@@ -93,8 +93,26 @@ def create_app(db_path: str | None = None, workdir: str | None = None) -> Flask:
         job = _job(jid)
         ctx = rpt.context(job.result, job.sender, job.sanitized)
         ctx["name"] = job.original.name
+        previewable = bool(job.sanitized and job.sanitized.output.endswith((".pdf", ".png")))
         return render_template("result.html", job=job, sanitize_error=job.error,
-                               download_url=url_for("download", jid=jid) if job.sanitized else None, **ctx)
+                               download_url=url_for("download", jid=jid) if job.sanitized else None,
+                               preview_url=url_for("preview", jid=jid) if previewable else None, **ctx)
+
+    @app.get("/r/<jid>/preview.png")
+    def preview(jid):
+        """First page of the safe copy, as the AI will now see it."""
+        job = _job(jid)
+        if not job.sanitized:
+            abort(404)
+        out = Path(job.sanitized.output)
+        thumb = out.with_suffix(".preview.png")
+        if not thumb.exists():
+            import pymupdf
+            with pymupdf.open(out) as doc:
+                page = doc[0]
+                zoom = min(2.0, 900 / max(page.rect.width, page.rect.height))
+                page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom)).save(thumb)
+        return send_file(thumb, mimetype="image/png")
 
     @app.get("/b/<bid>")
     def batch(bid):

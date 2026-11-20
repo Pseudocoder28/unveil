@@ -1,18 +1,22 @@
 {% extends "layout.html" %}
-{% block title %}Batch results · Unveil{% endblock %}
+{% from "_icons.html" import icon %}
+{% block title %}Batch results · unveil{% endblock %}
 {% block body %}
+<p style="margin:0 0 14px"><a href="{{ url_for('index') }}" class="small">{{ icon('arrow-left') }} Scan more files</a></p>
+{% set bad = jobs|selectattr('result.verdict', 'equalto', 'malicious')|list %}
+<h1 style="font-size:26px;margin:0 0 6px">{{ jobs|length }} files scanned</h1>
+<p class="muted" style="margin:0 0 18px">{% if bad %}<b style="color:var(--crit)">{{ bad|length }}</b> contained hidden AI instructions.{% else %}No hidden instructions found.{% endif %}</p>
 <section class="card">
-  <h2>{{ jobs|length }} files scanned</h2>
   <div class="scroll"><table class="list">
-    <tr><th>File</th><th>Result</th><th>Risk</th><th>Findings</th><th></th></tr>
+    <tr><th>File</th><th>Result</th><th>Findings</th><th style="text-align:right">Risk</th><th></th></tr>
     {% for j in jobs %}
     {% set c = j.result.counts() %}
-    <tr>
+    <tr class="v-{{ j.result.verdict }}">
       <td><a href="{{ url_for('result', jid=j.id) }}">{{ j.original.name }}</a></td>
-      <td><span class="v {{ j.result.verdict }}">{{ j.result.verdict }}</span></td>
-      <td>{{ j.result.score }}</td>
+      <td><span class="vtag">{{ j.result.verdict }}</span></td>
       <td>{% for sev in ['critical','high','medium','low'] %}{% if c[sev] %}<span class="pill s-{{ sev }}">{{ c[sev] }} {{ sev }}</span> {% endif %}{% endfor %}</td>
-      <td>{% if j.sanitized %}<a href="{{ url_for('download', jid=j.id) }}">safe copy</a>{% endif %}</td>
+      <td style="text-align:right" class="mono">{{ j.result.score }}</td>
+      <td style="text-align:right">{% if j.sanitized %}<a class="btn ghost sm" href="{{ url_for('download', jid=j.id) }}">{{ icon('download') }} Safe copy</a>{% endif %}</td>
     </tr>
     {% endfor %}
   </table></div>

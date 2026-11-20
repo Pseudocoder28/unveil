@@ -1,49 +1,122 @@
 {% extends "layout.html" %}
+{% block head %}
+<style>
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 40px; align-items: center; margin: 12px 0 36px; }
+.hero h1 { font-size: clamp(30px, 4.2vw, 44px); margin: 0 0 14px; letter-spacing: -.035em; line-height: 1.08; }
+.hero h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), #b14cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p.lede { color: var(--ink-2); font-size: 16.5px; margin: 0 0 18px; max-width: 46ch; }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.checks li { display: flex; gap: 8px; align-items: flex-start; }
+.checks svg { color: var(--ok); margin-top: 2px; }
+.drop { position: relative; display: grid; place-items: center; text-align: center; gap: 6px; min-height: 230px;
+  border: 1.5px dashed var(--line-2); border-radius: 12px; padding: 28px 16px; cursor: pointer; background: var(--surface-2);
+  transition: border-color .15s, background .15s; }
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop .up { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--surface); color: var(--accent); box-shadow: var(--shadow); margin-bottom: 6px; }
+.drop .up svg { width: 24px; height: 24px; }
+.drop strong { font-size: 16px; }
+.drop .types { font-size: 12.5px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; font-size: 13px; max-width: 100%; }
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fields { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--ink-2); }
+.row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 16px; }
+.switch { display: inline-flex; gap: 10px; align-items: center; font-size: 14px; cursor: pointer; user-select: none; color: var(--ink-2); }
+.switch input { appearance: none; width: 36px; height: 21px; border-radius: 999px; background: var(--line-2); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+.switch input::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { transform: translateX(15px); }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.step .n { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 10px; }
+.step h3 { margin: 0 0 4px; font-size: 15px; }
+.step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.overlay { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(4px); }
+.overlay.on { display: grid; }
+.overlay .box { text-align: center; }
+.spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; margin: 0 auto 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 24px; } .steps { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
 {% block body %}
-<h1 style="font-size:26px;letter-spacing:-0.02em;margin:0 0 8px">Check a file before an AI reads it</h1>
-<p class="lede">Unveil looks for instructions hidden in a file (white text, microscopic text, hidden
-comments, metadata, invisible characters) and then rebuilds the file from screenshots, so only what
-a person can see gets passed on.</p>
+<section class="hero">
+  <div>
+    <h1>Check a file <em>before an AI reads it.</em></h1>
+    <p class="lede">unveil finds instructions hidden in résumés, essays and reports, the kind a person can't see but an AI will obey. Then it rebuilds the file from screenshots so only what's visible gets through.</p>
+    <ul class="checks">
+      <li>{{ icon('check') }} White, microscopic, off-page and covered text</li>
+      <li>{{ icon('check') }} Hidden comments, metadata, alt text and invisible Unicode</li>
+      <li>{{ icon('check') }} Watch list and blocklist for people who try it</li>
+    </ul>
+  </div>
 
-<form class="card" method="post" action="{{ url_for('scan') }}" enctype="multipart/form-data" id="f">
-  <label class="drop" id="drop">
-    <input type="file" name="files" multiple accept="{{ accept }}" id="file">
-    <strong>Drop files here or click to choose</strong>
-    <p class="why">PDF, Word, PowerPoint, Excel, images, HTML, Markdown, text</p>
-    <div id="picked"></div>
-  </label>
-  <div class="row">
-    <label for="sender">Sent by</label>
-    <input type="text" id="sender" name="sender" placeholder="email or name (optional, for your watch list)" list="known">
-    <datalist id="known">{% for s in senders %}<option value="{{ s }}">{% endfor %}</datalist>
-  </div>
-  <div class="row">
-    <label><input type="checkbox" name="flatten" checked> Make a safe flattened copy</label>
-    <input type="hidden" name="flatten" value="off" disabled id="flatten-off">
-    <button class="btn" style="margin-left:auto">Scan</button>
-  </div>
-</form>
+  <form class="card" method="post" action="{{ url_for('scan') }}" enctype="multipart/form-data" id="f">
+    <label class="drop" id="drop">
+      <input type="file" name="files" multiple accept="{{ accept }}" id="file" required>
+      <span class="up">{{ icon('upload') }}</span>
+      <strong>Drop files here or click to choose</strong>
+      <span class="types">PDF · Word · PowerPoint · Excel · images · HTML · Markdown · text</span>
+    </label>
+    <div class="chips" id="chips"></div>
+    <div class="fields">
+      <div class="field">
+        <label for="sender">Sent by <span class="muted" style="font-weight:400">(optional)</span></label>
+        <input type="text" id="sender" name="sender" placeholder="name@example.com" list="known" autocomplete="off">
+        <datalist id="known">{% for s in senders %}<option value="{{ s }}">{% endfor %}</datalist>
+      </div>
+    </div>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="flat" checked> Make a safe copy</label>
+      <input type="hidden" name="flatten" id="flatten" value="on">
+      <button class="btn lg" id="go">{{ icon('search') }} Scan</button>
+    </div>
+  </form>
+</section>
+
+<section class="steps">
+  <div class="card step"><div class="n">{{ icon('search') }}</div><h3>1. Detect</h3><p>Every piece of text is checked for whether a person could actually see it, and whether it reads like an order to an AI.</p></div>
+  <div class="card step"><div class="n">{{ icon('layers') }}</div><h3>2. Flatten</h3><p>Pages are rebuilt from screenshots. Text layers, metadata, comments and attachments are discarded.</p></div>
+  <div class="card step"><div class="n">{{ icon('user') }}</div><h3>3. Track</h3><p>Senders of booby-trapped files go on a watch list. Blocking them is your call.</p></div>
+</section>
 
 {% if recent %}
 <section class="card">
-  <h2>Recent scans</h2>
+  <h2 class="section">Recent scans</h2>
   <div class="scroll"><table class="list">
-    <tr><th>File</th><th>Sender</th><th>Result</th><th>Risk</th></tr>
+    <tr><th>File</th><th>Sender</th><th>Result</th><th style="text-align:right">Risk</th></tr>
     {% for h in recent %}
-    <tr><td>{{ h.filename }}</td><td>{{ h.sender or '–' }}</td><td><span class="v {{ h.verdict }}">{{ h.verdict }}</span></td><td>{{ h.score }}</td></tr>
+    <tr class="v-{{ h.verdict }}"><td>{{ h.filename }}</td><td class="muted">{{ h.sender or '–' }}</td><td><span class="vtag">{{ h.verdict }}</span></td><td style="text-align:right" class="mono">{{ h.score }}</td></tr>
     {% endfor %}
   </table></div>
 </section>
 {% endif %}
 
+<div class="overlay" id="overlay"><div class="box"><div class="spinner"></div><b id="ov-title">Scanning…</b><div class="muted small">Checking every page and building the safe copy</div></div></div>
+
 <script>
-const drop = document.getElementById('drop'), input = document.getElementById('file'), picked = document.getElementById('picked');
-const show = () => picked.textContent = [...input.files].map(f => f.name).join(', ');
-input.addEventListener('change', show);
-['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
-['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
-const cb = document.querySelector('input[name=flatten][type=checkbox]'), off = document.getElementById('flatten-off');
-document.getElementById('f').addEventListener('submit', () => { off.disabled = cb.checked; });
+(() => {
+  const drop = document.getElementById('drop'), input = document.getElementById('file'), chips = document.getElementById('chips');
+  const fileIcon = `{{ icon('file')|replace('\n', '') }}`;
+  const show = () => {
+    chips.innerHTML = '';
+    [...input.files].forEach(f => {
+      const c = document.createElement('span'); c.className = 'chip';
+      c.innerHTML = fileIcon; const s = document.createElement('span'); s.textContent = f.name; c.appendChild(s); chips.appendChild(c);
+    });
+  };
+  input.addEventListener('change', show);
+  ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+  const flat = document.getElementById('flat'), hidden = document.getElementById('flatten');
+  flat.addEventListener('change', () => { hidden.value = flat.checked ? 'on' : 'off'; });
+  document.getElementById('f').addEventListener('submit', () => {
+    const n = input.files.length;
+    document.getElementById('ov-title').textContent = `Scanning ${n} file${n === 1 ? '' : 's'}…`;
+    document.getElementById('overlay').classList.add('on');
+  });
+})();
 </script>
 {% endblock %}

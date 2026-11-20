@@ -1,16 +1,17 @@
-<!doctype html>
+{% from "_icons.html" import icon %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Unveil report · {{ name }}</title>
+<meta name="color-scheme" content="light dark">
+<title>unveil report · {{ name }}</title>
 {% include "_styles.html" %}
 </head>
 <body>
-<div class="wrap">
-  <header class="top"><span class="brand">unveil</span></header>
+<header class="topbar"><div class="wrap"><span class="brand"><span class="mark">{{ icon('eye', 'x') }}</span>unveil</span><span class="local">Report</span></div></header>
+<main class="wrap" style="padding-top:28px">
   {% include "_report_body.html" %}
-  <p class="footer">Generated locally by unveil. Nothing was uploaded anywhere.</p>
-</div>
+  <p class="footer">{{ icon('lock') }} Generated locally by unveil. Nothing was uploaded anywhere.</p>
+</main>
 </body>
 </html>

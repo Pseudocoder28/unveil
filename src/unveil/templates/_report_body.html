@@ -1,76 +1,121 @@
+{% from "_icons.html" import icon %}
+{% set serious = findings|rejectattr('severity', 'equalto', 'info')|list %}
+{% set infos = findings|selectattr('severity', 'equalto', 'info')|list %}
+
 <section class="card verdict v-{{ r.verdict }}">
-  <span class="badge">{{ r.verdict }}</span>
-  <div style="flex:1;min-width:0">
+  <div class="icon">{{ icon('shield-check' if r.verdict == 'clean' else 'shield-alert', 'x') }}</div>
+  <div style="min-width:0">
+    <span class="vtag">{{ r.verdict }}</span>
     <h1>{{ verdict_text }}</h1>
-    <div class="meta">{{ name }} · {{ r.file_type|upper }}{% if r.pages %} · {{ r.pages }} page{{ 's' if r.pages != 1 }}{% endif %} · SHA-256 {{ r.sha256[:16] }}…</div>
+    <div class="meta">{{ icon('file') }} {{ name }} · {{ r.file_type|upper }}{% if r.pages %} · {{ r.pages }} page{{ 's' if r.pages != 1 }}{% endif %} · <span class="mono">sha256 {{ r.sha256[:12] }}</span></div>
+    {% if serious %}
     <div class="counts">
-      {% for sev in ['critical','high','medium','low','info'] %}{% if counts[sev] %}
-      <span class="pill s-{{ sev }}">{{ counts[sev] }} {{ sev }}</span>
-      {% endif %}{% endfor %}
+      {% for sev in ['critical','high','medium','low'] %}{% if counts[sev] %}<span class="pill s-{{ sev }}">{{ counts[sev] }} {{ sev }}</span>{% endif %}{% endfor %}
     </div>
+    {% endif %}
     {% if sender %}
       {% if sender.status == 'blocked' %}
-      <div class="banner blocked">⚠ {{ sender.sender }} is on your blocklist. {{ sender.malicious }} of {{ sender.scans }} file(s) they sent contained hidden AI instructions.</div>
+      <div class="banner blocked">{{ icon('ban') }} {{ sender.sender }} is blocked · {{ sender.malicious }} of {{ sender.scans }} file(s) they sent had hidden AI instructions.</div>
       {% elif sender.status == 'watch' %}
-      <div class="banner watch">{{ sender.sender }} is on your watch list ({{ sender.malicious }} of {{ sender.scans }} file(s) contained hidden instructions).
-        {% if allow_actions %}<form method="post" action="{{ url_for('sender_status') }}"><input type="hidden" name="sender" value="{{ sender.sender }}"><input type="hidden" name="status" value="blocked"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn danger" style="margin-left:8px;padding:5px 10px">Block sender</button></form>{% else %}Block with <code>unveil senders block "{{ sender.sender }}"</code>.{% endif %}
+      <div class="banner watch">{{ icon('alert') }} <span>{{ sender.sender }} is on your watch list · {{ sender.malicious }} of {{ sender.scans }} file(s) had hidden instructions.</span>
+        {% if allow_actions %}<form method="post" action="{{ url_for('sender_status') }}"><input type="hidden" name="sender" value="{{ sender.sender }}"><input type="hidden" name="status" value="blocked"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn danger sm">{{ icon('ban') }} Block sender</button></form>{% else %}<span class="mono small">unveil senders block "{{ sender.sender }}"</span>{% endif %}
       </div>
       {% else %}
-      <div class="banner ok">{{ sender.sender }}: {{ sender.status }} · {{ sender.scans }} file(s) scanned, {{ sender.malicious }} with hidden instructions.</div>
+      <div class="banner ok">{{ icon('user') }} {{ sender.sender }} · {{ sender.status }} · {{ sender.scans }} file(s) scanned, {{ sender.malicious }} with hidden instructions</div>
       {% endif %}
     {% endif %}
   </div>
-  <div class="score"><b>{{ r.score }}</b><span>risk / 100</span></div>
-</section>
-
-{% if sanitized %}
-<section class="card">
-  <h2>Safe copy</h2>
-  <div class="safe">
-    {% if download_url %}<a class="btn" href="{{ download_url }}">Download safe copy</a>{% endif %}
-    <span class="meta">{{ sanitized.output.split('/')[-1] }}</span>
+  {% set circ = 2 * 3.14159 * 34 %}
+  <div class="ring" title="Risk score">
+    <svg viewBox="0 0 84 84"><circle class="track" cx="42" cy="42" r="34" stroke-width="8" fill="none"/>
+      <circle class="bar" cx="42" cy="42" r="34" stroke-width="8" fill="none" stroke-linecap="round"
+        stroke-dasharray="{{ circ }}" stroke-dashoffset="{{ circ * (1 - r.score / 100) }}"/></svg>
+    <div class="num"><div><b>{{ r.score }}</b><span>risk</span></div></div>
   </div>
-  <ul class="notes">{% for n in sanitized.notes %}<li>{{ n }}</li>{% endfor %}</ul>
 </section>
-{% elif sanitize_error %}
-<section class="card"><h2>Safe copy</h2><p class="why">{{ sanitize_error }}</p></section>
-{% endif %}
 
-{% set serious = findings|rejectattr('severity', 'equalto', 'info')|list %}
-{% set infos = findings|selectattr('severity', 'equalto', 'info')|list %}
-<section class="card">
-  <h2>What we found</h2>
-  {% if not serious %}<p class="why">Nothing hidden was detected. Flattening the file is still the safest way to hand it to an AI.</p>{% endif %}
-  {% for f in serious %}
-  <div class="finding sev-{{ f.severity }}">
-    <div class="head">
-      <span class="pill s-{{ f.severity }}">{{ f.severity }}</span>
-      <span class="title">{{ f.title }}</span>
-      <span class="loc">{{ f.location }}</span>
+{% set has_side = sanitized or sanitize_error or report_url %}
+<div class="result-grid{{ ' solo' if not has_side }}">
+  <section class="card">
+    <h2 class="section">{{ icon('eye-off') }} What was hidden</h2>
+    {% if serious %}
+    <div class="filters" role="group" aria-label="Filter by severity">
+      <button type="button" data-f="all" aria-pressed="true">All {{ serious|length }}</button>
+      {% for sev in ['critical','high','medium','low'] %}{% if counts[sev] %}<button type="button" data-f="{{ sev }}" aria-pressed="false">{{ sev|capitalize }} {{ counts[sev] }}</button>{% endif %}{% endfor %}
     </div>
-    {% if f.text %}<pre>{{ f.text }}</pre>{% endif %}
-    {% if f.patterns %}<div class="tags">{% for p in f.patterns %}<span class="tag">{{ p|replace('-', ' ') }}</span>{% endfor %}</div>{% endif %}
-    {% if f.detail %}<div class="why">{{ f.detail }}</div>{% endif %}
-  </div>
-  {% endfor %}
-  {% if infos %}
-  <details class="info" style="margin-top:12px"><summary>{{ infos|length }} informational item{{ 's' if infos|length != 1 }} (metadata etc.)</summary>
-    {% for f in infos %}
-    <div class="finding sev-info"><div class="head"><span class="title">{{ f.title }}</span><span class="loc">{{ f.location }}</span></div>
-      {% if f.text %}<pre>{{ f.text }}</pre>{% endif %}{% if f.detail %}<div class="why">{{ f.detail }}</div>{% endif %}</div>
+    {% for f in serious %}
+    <article class="finding sev-{{ f.severity }}" data-sev="{{ f.severity }}">
+      <div class="head">
+        <span class="pill s-{{ f.severity }}">{{ f.severity }}</span>
+        <span class="title">{{ f.title }}</span>
+        <span class="loc">{{ f.location }}</span>
+      </div>
+      {% if f.text %}<div class="quote">{{ f.text }}<button class="copy" type="button" title="Copy text" aria-label="Copy text">{{ icon('copy') }}</button></div>{% endif %}
+      {% if f.patterns %}<div class="tags">{% for p in f.patterns %}<span class="tag">{{ p|replace('-', ' ') }}</span>{% endfor %}</div>{% endif %}
+      {% if f.detail %}<div class="why">{{ f.detail }}</div>{% endif %}
+    </article>
     {% endfor %}
-  </details>
+    {% else %}
+    <div class="empty">{{ icon('shield-check') }}<p><b style="color:var(--ink)">Nothing hidden detected.</b><br>Flattening is still the safest way to pass a file to an AI.</p></div>
+    {% endif %}
+    {% if infos %}
+    <details class="info"><summary>{{ infos|length }} informational item{{ 's' if infos|length != 1 }} (metadata etc.)</summary>
+      {% for f in infos %}
+      <article class="finding sev-info"><div class="head"><span class="title">{{ f.title }}</span><span class="loc">{{ f.location }}</span></div>
+        {% if f.text %}<div class="quote">{{ f.text }}<button class="copy" type="button" title="Copy text" aria-label="Copy text">{{ icon('copy') }}</button></div>{% endif %}</article>
+      {% endfor %}
+    </details>
+    {% endif %}
+  </section>
+
+  {% if has_side %}
+  <aside class="side stack">
+    {% if sanitized %}
+    <section class="card">
+      <h2 class="section">{{ icon('layers') }} Safe copy</h2>
+      {% if preview_url %}<img class="safe-preview" src="{{ preview_url }}" alt="First page of the safe copy">{% endif %}
+      {% if download_url %}<a class="btn" style="width:100%" href="{{ download_url }}">{{ icon('download') }} Download safe copy</a>
+      {% else %}<div class="mono small">{{ sanitized.output }}</div>{% endif %}
+      <ul class="notes">{% for n in sanitized.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+    </section>
+    {% elif sanitize_error %}
+    <section class="card"><h2 class="section">{{ icon('layers') }} Safe copy</h2><p class="why">{{ sanitize_error }}</p></section>
+    {% endif %}
+    {% if report_url %}
+    <a class="btn ghost" style="width:100%" href="{{ report_url }}">{{ icon('file') }} Download report (HTML)</a>
+    {% endif %}
+  </aside>
   {% endif %}
-</section>
+</div>
 
 {% if evidence %}
-<section class="card">
-  <h2>Where it was hidden</h2>
-  <p class="why" style="margin-top:-6px">Red boxes mark text a reader cannot see but an AI would read.</p>
-  <div class="evidence">
+<section class="card" style="margin-top:16px">
+  <h2 class="section">{{ icon('search') }} Where it was hidden</h2>
+  <div class="compare">
     {% for page, uri in evidence.items() %}
-    <figure><img src="{{ uri }}" alt="Page {{ page }} with hidden text locations marked"><figcaption>Page {{ page }}</figcaption></figure>
+    <figure><img src="{{ uri }}" alt="Page {{ page }} with hidden text marked">
+      <figcaption><span class="dot" style="background:var(--crit)"></span> Original, page {{ page }}. Red boxes are text a reader can't see but an AI reads.</figcaption></figure>
+    {% if loop.first and preview_url %}
+    <figure><img src="{{ preview_url }}" alt="Safe copy, page 1">
+      <figcaption><span class="dot" style="background:var(--ok)"></span> Safe copy, page 1. Only what a person can see.</figcaption></figure>
+    {% endif %}
     {% endfor %}
   </div>
 </section>
 {% endif %}
+
+<script>
+(() => {
+  const btns = document.querySelectorAll('.filters button');
+  btns.forEach(b => b.addEventListener('click', () => {
+    btns.forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('.finding[data-sev]').forEach(el => {
+      el.hidden = !(b.dataset.f === 'all' || el.dataset.sev === b.dataset.f);
+    });
+  }));
+  document.querySelectorAll('.quote .copy').forEach(btn => btn.addEventListener('click', async () => {
+    const text = btn.parentElement.firstChild.textContent;
+    try { await navigator.clipboard.writeText(text); btn.title = 'Copied'; btn.style.color = 'var(--ok)'; } catch (e) {}
+  }));
+})();
+</script>

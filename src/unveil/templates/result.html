@@ -1,7 +1,8 @@
 {% extends "layout.html" %}
-{% block title %}{{ name }} · Unveil{% endblock %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ name }} · unveil{% endblock %}
 {% block body %}
+<p style="margin:0 0 14px"><a href="{{ url_for('index') }}" class="small">{{ icon('arrow-left') }} Scan another file</a></p>
+{% set report_url = url_for('report_download', jid=job.id) %}
 {% include "_report_body.html" %}
-<p><a class="btn secondary" href="{{ url_for('report_download', jid=job.id) }}">Download report (HTML)</a>
-   <a class="btn secondary" href="{{ url_for('index') }}">Scan another file</a></p>
 {% endblock %}
