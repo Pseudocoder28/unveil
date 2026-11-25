@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import get_context
 from typing import Callable, Iterable
 
@@ -63,7 +64,11 @@ def run_chunks(fn: Callable, path: str, chunks: list[list[int]], *args) -> Itera
             yield fn(path, c, *args)
         return
     workers = min(max_workers(), len(chunks))
-    with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as ex:
-        futures = [ex.submit(fn, path, c, *args) for c in chunks]
-        for fut in futures:
-            yield fut.result()
+    try:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as ex:
+            results = [f.result() for f in [ex.submit(fn, path, c, *args) for c in chunks]]
+    except (OSError, NotImplementedError, PermissionError, BrokenProcessPool):
+        # Some sandboxes and serverless hosts can't start worker processes (no /dev/shm,
+        # no semaphores). Do the work in this process instead of failing.
+        results = [fn(path, [p for c in chunks for p in c], *args)]
+    yield from results

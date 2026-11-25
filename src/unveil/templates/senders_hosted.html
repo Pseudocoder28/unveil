@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Senders · unveil{% endblock %}
+{% block body %}
+<h1 style="font-size:28px;margin:0 0 6px">Senders</h1>
+<section class="card" style="max-width:680px">
+  <div class="empty" style="text-align:left;padding:4px 0">
+    <p style="margin-top:0"><b style="color:var(--ink)">Sender tracking runs on your own computer.</b></p>
+    <p>The watch list and blocklist remember who sent you files with hidden AI instructions. That history
+      is personal, so it isn't kept on this shared hosted demo: nothing about your scans is stored here.</p>
+    <p style="margin-bottom:0">Install unveil locally to use it:</p>
+  </div>
+  <div class="quote" style="padding-right:14px">pip install git+https://github.com/Pseudocoder28/unveil.git
+unveil web</div>
+  <a class="btn ghost" href="https://github.com/Pseudocoder28/unveil#quick-start">{{ icon('file') }} Setup guide</a>
+</section>
+{% endblock %}

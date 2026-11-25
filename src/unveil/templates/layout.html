@@ -13,16 +13,21 @@
 <header class="topbar">
   <div class="wrap">
     <a class="brand" href="{{ url_for('index') }}"><span class="mark">{{ icon('eye', 'x') }}</span>unveil</a>
-    <span class="local" title="Everything runs on this computer">Local only</span>
+    {% if hosted %}<span class="local hosted" title="Files are deleted as soon as the result is sent">Hosted demo</span>
+    {% else %}<span class="local" title="Everything runs on this computer">Local only</span>{% endif %}
     <nav class="nav">
-      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint in ('index', 'result', 'batch') }}">Scan</a>
+      <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint in ('index', 'result', 'batch', 'scan') }}">Scan</a>
       <a href="{{ url_for('senders') }}" class="{{ 'active' if request.endpoint == 'senders' }}">Senders</a>
     </nav>
   </div>
 </header>
 <main class="wrap" style="padding-top:28px">
   {% block body %}{% endblock %}
+  {% if hosted %}
+  <p class="footer">{{ icon('lock') }} <span>Hosted demo: your file is sent to this server, scanned, and deleted as soon as the result is returned. Nothing is stored. For confidential files, <a href="https://github.com/Pseudocoder28/unveil#quick-start">run unveil on your own computer</a>.</span></p>
+  {% else %}
   <p class="footer">{{ icon('lock') }} Runs entirely on this computer. Files are never uploaded anywhere.</p>
+  {% endif %}
 </main>
 </body>
 </html>

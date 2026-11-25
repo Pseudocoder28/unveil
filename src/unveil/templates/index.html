@@ -48,18 +48,22 @@
     <ul class="checks">
       <li>{{ icon('check') }} White, microscopic, off-page and covered text</li>
       <li>{{ icon('check') }} Hidden comments, metadata, alt text and invisible Unicode</li>
-      <li>{{ icon('check') }} Watch list and blocklist for people who try it</li>
+      <li>{{ icon('check') }} <span>Watch list and blocklist for people who try it{% if hosted %} <span class="muted">(when run on your own computer)</span>{% endif %}</span></li>
     </ul>
   </div>
 
   <form class="card" method="post" action="{{ url_for('scan') }}" enctype="multipart/form-data" id="f">
     <label class="drop" id="drop">
-      <input type="file" name="files" multiple accept="{{ accept }}" id="file" required>
+      <input type="file" name="files" {% if not hosted %}multiple {% endif %}accept="{{ accept }}" id="file" required>
       <span class="up">{{ icon('upload') }}</span>
-      <strong>Drop files here or click to choose</strong>
-      <span class="types">PDF · Word · PowerPoint · Excel · images · HTML · Markdown · text</span>
+      <strong>{{ 'Drop a file here' if hosted else 'Drop files here' }} or click to choose</strong>
+      <span class="types">PDF · Word · PowerPoint · Excel · images · HTML · Markdown · text{% if hosted %} · up to {{ limit_mb }} MB{% endif %}</span>
     </label>
+    <div class="notice err" id="err" {% if not error %}hidden{% endif %}>{{ icon('alert') }}<span id="err-text">{{ error or '' }}</span></div>
     <div class="chips" id="chips"></div>
+    {% if hosted %}
+    <div class="notice note">{{ icon('lock') }}<span>This hosted demo scans one file at a time. Your file is deleted as soon as the result is returned. For confidential files, bigger files and sender tracking, <a href="https://github.com/Pseudocoder28/unveil#quick-start">run unveil on your own computer</a>.</span></div>
+    {% else %}
     <div class="fields">
       <div class="field">
         <label for="sender">Sent by <span class="muted" style="font-weight:400">(optional)</span></label>
@@ -67,6 +71,7 @@
         <datalist id="known">{% for s in senders %}<option value="{{ s }}">{% endfor %}</datalist>
       </div>
     </div>
+    {% endif %}
     <div class="row">
       <label class="switch"><input type="checkbox" id="flat" checked> Make a safe copy</label>
       <input type="hidden" name="flatten" id="flatten" value="on">
@@ -78,7 +83,7 @@
 <section class="steps">
   <div class="card step"><div class="n">{{ icon('search') }}</div><h3>1. Detect</h3><p>Every piece of text is checked for whether a person could actually see it, and whether it reads like an order to an AI.</p></div>
   <div class="card step"><div class="n">{{ icon('layers') }}</div><h3>2. Flatten</h3><p>Pages are rebuilt from screenshots. Text layers, metadata, comments and attachments are discarded.</p></div>
-  <div class="card step"><div class="n">{{ icon('user') }}</div><h3>3. Track</h3><p>Senders of booby-trapped files go on a watch list. Blocking them is your call.</p></div>
+  <div class="card step"><div class="n">{{ icon('user') }}</div><h3>3. Track</h3><p>Senders of booby-trapped files go on a watch list. Blocking them is your call.{% if hosted %} Available when you run unveil locally.{% endif %}</p></div>
 </section>
 
 {% if recent %}
@@ -112,7 +117,17 @@
   drop.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
   const flat = document.getElementById('flat'), hidden = document.getElementById('flatten');
   flat.addEventListener('change', () => { hidden.value = flat.checked ? 'on' : 'off'; });
-  document.getElementById('f').addEventListener('submit', () => {
+  const maxBytes = {{ (limit_mb * 1024 * 1024) if hosted else 0 }};
+  const err = document.getElementById('err'), errText = document.getElementById('err-text');
+  document.getElementById('f').addEventListener('submit', (ev) => {
+    const big = maxBytes && [...input.files].find(f => f.size > maxBytes);
+    if (big) {
+      ev.preventDefault();
+      errText.textContent = `${big.name} is larger than {{ limit_mb }} MB, the most this hosted version accepts. Run unveil on your own computer for bigger files.`;
+      err.hidden = false;
+      return;
+    }
+    err.hidden = true;
     const n = input.files.length;
     document.getElementById('ov-title').textContent = `Scanning ${n} file${n === 1 ? '' : 's'}…`;
     document.getElementById('overlay').classList.add('on');

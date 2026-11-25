@@ -220,6 +220,23 @@ Without LibreOffice, Word files go through unveil's built-in renderer, which kee
 headings, tables and images but simplifies the layout. PowerPoint and Excel can be
 *scanned* without it, but not flattened.
 
+### Option 3: host it (Vercel)
+
+The repo deploys to Vercel as-is: `app.py` is the entry point, and the app switches to
+**hosted mode** automatically.
+
+| | Local (`unveil web`) | Hosted (Vercel) |
+|---|---|---|
+| Where files go | stay on your computer | sent to the server, deleted as soon as the result is returned |
+| Files per scan | many | one |
+| Max file size | none | 4 MB (Vercel's 4.5 MB request limit) |
+| Safe copy | any size | up to ~2.5 MB (returned inside the page) |
+| Sender watch list / blocklist | ✅ | ❌ a shared server must not mix visitors' histories |
+
+To deploy: import the GitHub repo in Vercel and keep the default settings. Any host that can
+run a Flask app works the same way. Point it at `app:app`, or set `UNVEIL_HOSTED=1` and call
+`unveil.web.create_app()`.
+
 ---
 
 ## Performance

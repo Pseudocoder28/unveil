@@ -74,7 +74,7 @@
     <section class="card">
       <h2 class="section">{{ icon('layers') }} Safe copy</h2>
       {% if preview_url %}<img class="safe-preview" src="{{ preview_url }}" alt="First page of the safe copy">{% endif %}
-      {% if download_url %}<a class="btn" style="width:100%" href="{{ download_url }}">{{ icon('download') }} Download safe copy</a>
+      {% if download_url %}<a class="btn" style="width:100%" href="{{ download_url }}"{% if download_name %} download="{{ download_name }}"{% endif %}>{{ icon('download') }} Download safe copy</a>
       {% else %}<div class="mono small">{{ sanitized.output }}</div>{% endif %}
       <ul class="notes">{% for n in sanitized.notes %}<li>{{ n }}</li>{% endfor %}</ul>
     </section>

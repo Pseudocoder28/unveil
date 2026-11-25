@@ -129,7 +129,8 @@ def html(result: ScanResult, sender: dict | None = None, sanitized=None, evidenc
     return tpl.render(**context(result, sender, sanitized, evidence))
 
 
-def context(result: ScanResult, sender: dict | None = None, sanitized=None, evidence: bool = True) -> dict:
+def context(result: ScanResult, sender: dict | None = None, sanitized=None, evidence: bool = True,
+            max_evidence_pages: int = 10) -> dict:
     return {
         "r": result,
         "name": Path(result.path).name,
@@ -138,5 +139,5 @@ def context(result: ScanResult, sender: dict | None = None, sanitized=None, evid
         "counts": result.counts(),
         "sender": sender,
         "sanitized": sanitized,
-        "evidence": evidence_images(result) if evidence else {},
+        "evidence": evidence_images(result, max_pages=max_evidence_pages) if evidence else {},
     }
